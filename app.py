@@ -19,7 +19,7 @@ if st.button("Fetch and Analyze"):
     else:
         with st.spinner(f"Fetching record for '{acc_number}' from NCBI..."):
             try:
-                # 1. جلب بيانات GenBank للمعلومات والجينات
+                #  GenBank 
                 fetch_handle = Entrez.efetch(db="nucleotide", id=acc_number, rettype="gb", retmode="text")
                 gb_data = fetch_handle.read()
                 fetch_handle.close()
@@ -27,7 +27,7 @@ if st.button("Fetch and Analyze"):
                 gb_io = StringIO(gb_data)
                 record = SeqIO.read(gb_io, "genbank")
                 
-                # 2. جلب تسلسل FASTA مباشرة لتجنب خطأ Undefined Sequence
+                #  FASTA 
                 fasta_handle = Entrez.efetch(db="nucleotide", id=acc_number, rettype="fasta", retmode="text")
                 fasta_data = fasta_handle.read()
                 fasta_handle.close()
@@ -41,23 +41,42 @@ if st.button("Fetch and Analyze"):
                 is_chromosome = acc_number.upper().startswith("NC")
                 
                 gene_name = "Not Available"
-                gene_function = "Not Available"
                 gene_location = "Not Available"
                 
                 for feature in record.features:
                     if feature.type == "CDS":
                         if "gene" in feature.qualifiers:
                             gene_name = feature.qualifiers["gene"][0]
-                        if "product" in feature.qualifiers:
-                            gene_function = feature.qualifiers["product"][0]
                         gene_location = f"{feature.location.start + 1} to {feature.location.end} bp"
                         break
                     elif feature.type == "gene" and gene_name == "Not Available":
                         if "gene" in feature.qualifiers:
                             gene_name = feature.qualifiers["gene"][0]
                         gene_location = f"{feature.location.start + 1} to {feature.location.end} bp"
-
-                # iNaturalist API
+               
+                
+                gene_summary = "Not Available"
+                if gene_name != "Not Available":
+                    try:
+                        search_handle = Entrez.esearch(db="gene", term=f"{gene_name}[Gene Name] AND {scientific_name}[Organism]")
+                        search_results = Entrez.read(search_handle)
+                        search_handle.close()
+                        
+                        id_list = search_results.get("IdList", [])
+                        if id_list:
+                            target_gene_id = id_list[0]
+                            summary_handle = Entrez.esummary(db="gene", id=target_gene_id)
+                            summary_record = Entrez.read(summary_handle)
+                            summary_handle.close()
+                            
+                            full_summary = summary_record['DocumentSummarySet']['DocumentSummary'][0].get('Summary', '')
+                            if full_summary:
+                                gene_summary = full_summary.split('.')[0] + "."
+                    except Exception:
+                        gene_summary = "Could not fetch the summary from NCBI."
+              
+            
+            # iNaturalist API
                 inat_url = f"https://api.inaturalist.org/v1/taxa?q={scientific_name}&per_page=1"
                 response = requests.get(inat_url).json()
                 
@@ -106,7 +125,7 @@ if st.button("Fetch and Analyze"):
                         st.warning(" **Note:** This is an **`NC_`** chromosome record containing a full genomic molecule with multiple loci, rather than an isolated single gene.")
                     else:
                         st.info(f"**Gene Name:** `{gene_name}`")
-                        st.write(f"**Function:** {gene_function}")
+                        st.write(f"**Function:** {gene_summary}")
                         st.success(f" **Internal Genomic Locus:** Located at position **{gene_location}**.")
 
                 with tab3:
